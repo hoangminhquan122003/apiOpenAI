@@ -1,0 +1,6 @@
+openai:
+  api:
+    model: "gpt-4o-mini"
+    url: "https://api.openai.com/v1/chat/completions"
+    key: "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"
+
