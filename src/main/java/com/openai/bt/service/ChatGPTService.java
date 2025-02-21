@@ -48,8 +48,6 @@ public class ChatGPTService {
                 "required"
         );
 
-        System.out.println("API Request: " + chatGPTRequest);
-
         ChatGPTResponse chatGPTResponse = restClient.post()
                 .header("Authorization", "Bearer " + key)
                 .header("Content-Type", "application/json")
@@ -59,18 +57,13 @@ public class ChatGPTService {
 
         System.out.println("API Response: " + chatGPTResponse);
 
-        Message assistantMessage = chatGPTResponse.choices().getFirst().message();
-        if (assistantMessage.tool_calls() == null || assistantMessage.tool_calls().isEmpty()) {
-            throw new RuntimeException("Function call không được kích hoạt. Kiểm tra request hoặc API key.");
-        }
-
-        FunctionCall functionCall = assistantMessage.tool_calls().get(0).function();
+        FunctionCall functionCall = chatGPTResponse.choices().getFirst().message().tool_calls().get(0).function();
 
         ObjectMapper objectMapper = new ObjectMapper();
         try {
             return objectMapper.readValue(functionCall.arguments(), ConversationInfo.class);
-        } catch (JsonProcessingException e) {
-            throw new RuntimeException("Lỗi khi parse JSON từ function call", e);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
         }
     }
 }
