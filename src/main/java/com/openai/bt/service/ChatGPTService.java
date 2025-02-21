@@ -9,44 +9,70 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 
 import java.util.List;
+import java.util.Map;
 
 @Service
 public class ChatGPTService {
     @Autowired
     RestClient restClient;
+
     @Value("${openai.api.model}")
     private String model;
+
     @Value("${openai.api.key}")
     private String key;
 
-    public ConversationInfo getChatResponse(PromptRequest promptRequest){
-        String prompt= """
-               Trích xuất thông tin từ cuộc trò chuyện sau:
-               %s
-               Trả về dưới dạng JSON đúng chuẩn như dưới đây trả về luôn không nói bất cứ thứ gì ảnh hưởng đến đoạn json:
-               {
-                   "customerName": "",
-                   "dob": "",
-                   "insuranceAmount": "",
-                   "packageType": ""
-               }              
-               """.formatted(promptRequest.prompt());
-        ChatGPTRequest chatGPTRequest=new ChatGPTRequest(model,
-                List.of(new Message("user",prompt)));
-        ChatGPTResponse chatGPTResponse=restClient.post()
-                .header("Authorization","Bearer "+key)
-                .header("Content-Type","application/json")
+    public ConversationInfo getChatResponse(PromptRequest promptRequest) {
+        Map<String, Object> functionSchema = Map.of(
+                "type", "function",
+                "function", Map.of(
+                        "name", "extractConversationInfo",
+                        "description", "Trích xuất thông tin khách hàng từ cuộc trò chuyện",
+                        "parameters", Map.of(
+                                "type", "object",
+                                "properties", Map.of(
+                                        "customerName", Map.of("type", "string", "description", "Tên khách hàng"),
+                                        "dob", Map.of("type", "string", "description", "Ngày sinh của khách hàng"),
+                                        "insuranceAmount", Map.of("type", "string", "description", "Số tiền bảo hiểm"),
+                                        "packageType", Map.of("type", "string", "description", "Loại gói bảo hiểm")
+                                ),
+                                "required", List.of("customerName", "dob", "insuranceAmount", "packageType")
+                        )
+                )
+        );
+
+        ChatGPTRequest chatGPTRequest = new ChatGPTRequest(
+                model,
+                List.of(new Message("user", promptRequest.prompt(), null)), // `null` vì message đầu vào không có tool_calls
+                List.of(functionSchema),
+                "required"
+        );
+
+        System.out.println("API Request: " + chatGPTRequest);
+
+        ChatGPTResponse chatGPTResponse = restClient.post()
+                .header("Authorization", "Bearer " + key)
+                .header("Content-Type", "application/json")
                 .body(chatGPTRequest)
                 .retrieve()
                 .body(ChatGPTResponse.class);
-        String responseContent= chatGPTResponse.choices().get(0).message().content();
-        //responseContent = responseContent.replaceAll("```json|```", "").trim();
-        System.out.println( responseContent);
-        ObjectMapper objectMapper=new ObjectMapper();
+
+        System.out.println("API Response: " + chatGPTResponse);
+
+        Message assistantMessage = chatGPTResponse.choices().getFirst().message();
+        if (assistantMessage.tool_calls() == null || assistantMessage.tool_calls().isEmpty()) {
+            throw new RuntimeException("Function call không được kích hoạt. Kiểm tra request hoặc API key.");
+        }
+
+        FunctionCall functionCall = assistantMessage.tool_calls().get(0).function();
+
+        ObjectMapper objectMapper = new ObjectMapper();
         try {
-            return objectMapper.readValue(responseContent, ConversationInfo.class);
+            return objectMapper.readValue(functionCall.arguments(), ConversationInfo.class);
         } catch (JsonProcessingException e) {
-            throw new RuntimeException(e);
+            throw new RuntimeException("Lỗi khi parse JSON từ function call", e);
         }
     }
 }
+
+

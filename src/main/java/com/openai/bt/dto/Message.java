@@ -1,4 +1,6 @@
 package com.openai.bt.dto;
 
-public record Message(String role, String content) {
-}
+import java.util.List;
+
+public record Message(String role, String content, List<ToolCall> tool_calls) {}
+
